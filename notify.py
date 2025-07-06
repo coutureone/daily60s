@@ -180,34 +180,56 @@ def console(title: str, content: str) -> None:
     print(f"{title}\n\n{content}")
 
 
+def get_dingding_configs():
+    """获取所有钉钉机器人配置"""
+    tokens = push_config.get("DD_BOT_TOKENS", "").split(';') if push_config.get("DD_BOT_TOKENS") else []
+    secrets = push_config.get("DD_BOT_SECRETS", "").split(';') if push_config.get("DD_BOT_SECRETS") else []
+
+    # 确保 token 和 secret 数量匹配
+    min_len = min(len(tokens), len(secrets))
+    return [
+        {"token": tokens[i], "secret": secrets[i]}
+        for i in range(min_len)
+    ]
+
+
 def dingding_bot(title: str, content: str) -> None:
-    """
-    使用 钉钉机器人 推送消息。
-    """
-    if not push_config.get("DD_BOT_SECRET") or not push_config.get("DD_BOT_TOKEN"):
-        print("钉钉机器人 服务的 DD_BOT_SECRET 或者 DD_BOT_TOKEN 未设置!!\n取消推送")
+    """使用钉钉机器人推送消息（支持多个机器人）"""
+    configs = get_dingding_configs()
+    if not configs:
+        print("钉钉机器人服务的 DD_BOT_TOKENS 或 DD_BOT_SECRETS 未设置!!\n取消推送")
         return
-    print("钉钉机器人 服务启动")
 
-    timestamp = str(round(time.time() * 1000))
-    secret_enc = push_config.get("DD_BOT_SECRET").encode("utf-8")
-    string_to_sign = "{}\n{}".format(timestamp, push_config.get("DD_BOT_SECRET"))
-    string_to_sign_enc = string_to_sign.encode("utf-8")
-    hmac_code = hmac.new(
-        secret_enc, string_to_sign_enc, digestmod=hashlib.sha256
-    ).digest()
-    sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
-    url = f'https://oapi.dingtalk.com/robot/send?access_token={push_config.get("DD_BOT_TOKEN")}&timestamp={timestamp}&sign={sign}'
-    headers = {"Content-Type": "application/json;charset=utf-8"}
-    data = {"msgtype": "text", "text": {"content": f"{title}\n\n{content}"}}
-    response = requests.post(
-        url=url, data=json.dumps(data), headers=headers, timeout=15
-    ).json()
+    print(f"钉钉机器人服务启动，共 {len(configs)} 个机器人")
 
-    if not response["errcode"]:
-        print("钉钉机器人 推送成功！")
-    else:
-        print("钉钉机器人 推送失败！")
+    for i, config in enumerate(configs, 1):
+        token = config["token"]
+        secret = config["secret"]
+        print(f"正在推送钉钉机器人 #{i}...")
+
+        timestamp = str(round(time.time() * 1000))
+        secret_enc = secret.encode("utf-8")
+        string_to_sign = "{}\n{}".format(timestamp, secret)
+        string_to_sign_enc = string_to_sign.encode("utf-8")
+        hmac_code = hmac.new(
+            secret_enc, string_to_sign_enc, digestmod=hashlib.sha256
+        ).digest()
+        sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+        url = f'https://oapi.dingtalk.com/robot/send?access_token={token}&timestamp={timestamp}&sign={sign}'
+        headers = {"Content-Type": "application/json;charset=utf-8"}
+        data = {"msgtype": "text", "text": {"content": f"{title}\n\n{content}"}}
+
+        try:
+            response = requests.post(
+                url=url, data=json.dumps(data), headers=headers, timeout=15
+            ).json()
+
+            if not response.get("errcode"):
+                print(f"钉钉机器人 #{i} 推送成功！")
+            else:
+                print(f"钉钉机器人 #{i} 推送失败！错误码：{response.get('errcode')}")
+        except Exception as e:
+            print(f"钉钉机器人 #{i} 推送异常：{str(e)}")
 
 
 def feishu_bot(title: str, content: str) -> None:
@@ -887,7 +909,7 @@ def add_notify_function():
         notify_function.append(bark)
     if push_config.get("CONSOLE"):
         notify_function.append(console)
-    if push_config.get("DD_BOT_TOKEN") and push_config.get("DD_BOT_SECRET"):
+    if get_dingding_configs():
         notify_function.append(dingding_bot)
     if push_config.get("FSKEY"):
         notify_function.append(feishu_bot)
